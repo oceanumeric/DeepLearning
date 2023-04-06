@@ -105,4 +105,11 @@ if __name__ == "__main__":
     print("First data point", xor_dataset[0])
     
     visualize_sample(xor_dataset.data, xor_dataset.label)
+    
+    # create a data loader
+    data_loader = data.DataLoader(xor_dataset, batch_size=8, shuffle=True)
+    data_inputs, data_labels = next(iter(data_loader))
+    
+    print("Data inputs", data_inputs.shape, "\n", data_inputs)
+    print("Data labels", data_labels.shape, "\n", data_labels)
 # %%
