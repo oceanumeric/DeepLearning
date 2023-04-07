@@ -13,7 +13,7 @@ from urllib.error import HTTPError
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.utils.data as data
+import torch.utils.data as tu_data
 import torch.optim as optim
 import torchvision
 from torchvision.datasets import FashionMNIST
@@ -259,10 +259,77 @@ def save_model(model, model_path, model_name):
     with open(config_file, "w") as f:
         json.dump(config_dict, f)
     torch.save(model.state_dict(), model_file)
-
+    
+    
+def visualize_gradients(net, color="c0"):
+    """
+    Inputs:
+        net: network, class object
+        color: color of the plot
+    remark: this function is designed to be called in a loop
+    """
+    # we are loading a pretrained model, so we don't need to train it
+    # we only need to evaluate it
+    net.eval()
+    small_loader = tu_data.DataLoader(train_set, batch_size=256,
+                                      shuffle=False)
+    imgs, labels = next(iter(small_loader))
+    imgs, labels = imgs.to(device), labels.to(device)
+    
+    # pass images through the network
+    net.zero_grad()  # reset gradients
+    preds = net(imgs)  # forward pass and compute predictions
+    loss = F.cross_entropy(preds, labels)  # compute loss
+    loss.backward()  # compute gradients
+    
+    # extract graidients for weights but not for biases
+    grads = {name: param.grad.data.view(-1).cpu().clone().numpy() for name,
+                param in net.named_parameters()
+                if "weight"  in name}
+    net.zero_grad()  # reset gradients
+    
+    ## Plotting
+    columns = len(grads)
+    fig, ax = plt.subplots(1, columns, figsize=(columns*3.5, 2.5))
+    fig_index = 0
+    for key in grads:
+        key_ax = ax[fig_index%columns]
+        sns.histplot(data=grads[key], bins=30, ax=key_ax, color=color, kde=True)
+        key_ax.set_title(str(key))
+        key_ax.set_xlabel("Grad magnitude")
+        fig_index += 1
+    fig.suptitle(f"Gradient magnitude distribution for activation function {net.config['activation_fun']['name']}", fontsize=14, y=1.05)
+    fig.subplots_adjust(wspace=0.45)
+    plt.show()
+    plt.close()
     
 
+def train_model(net, model_name, max_epochs=50, patience=7,
+                    batch_size=256, overwrite=False):
+    """
+    Train a model on the training set of FashionMNIST
 
+    Inputs:
+        net - Object of BaseNetwork
+        model_name - (str) Name of the model, used for creating the checkpoint names
+        max_epochs - Number of epochs we want to (maximally) train for
+        patience - If the performance on the validation set has not
+                    improved for #patience epochs, we stop training early
+        batch_size - Size of batches used in training
+        overwrite - Determines how to handle the case when there already
+                    exists a checkpoint. If True, it will be overwritten.
+                    Otherwise, we skip training.
+    """
+    file_exists = os.path.isfile(_get_model_file(CHECKPOINT_PATH, model_name))
+    if file_exists and not overwrite:
+        print("Model file already exists. Skipping training...")
+    else:
+        if file_exists:
+            print("Model file exists, but will be overwritten...")
+    
+    
+        
+    
 
 if __name__ == "__main__":
     print(os.getcwd())
@@ -286,40 +353,47 @@ if __name__ == "__main__":
                                 transforms.Normalize((0.5,), (0.5,))])
     train_dataset = FashionMNIST(root=DATASET_PATH, train=True,
                                  download=True, transform=transform)
-    train_set, val_set = torch.utils.data.random_split(train_dataset,
+    train_set, val_set = tu_data.random_split(train_dataset,
                                                        [50000, 10000])
 
     # Loading the test set
     test_set = FashionMNIST(root=DATASET_PATH, train=False,
                             transform=transform,
                             download=True)
-    train_loader = data.DataLoader(train_set,
+    train_loader = tu_data.DataLoader(train_set,
                                    batch_size=1024,
                                    shuffle=True,
                                    drop_last=False)
-    val_loader = data.DataLoader(val_set,
+    val_loader = tu_data.DataLoader(val_set,
                                  batch_size=1024,
                                  shuffle=False,
                                  drop_last=False)
-    test_loader = data.DataLoader(test_set,
+    test_loader = tu_data.DataLoader(test_set,
                                   batch_size=1024,
                                   shuffle=False,
                                   drop_last=False)
     
     # check images
-    exmp_imgs = [train_set[i][0] for i in range(16)]
-    # Organize the images into a grid for nicer visualization
-    img_grid = torchvision.utils.make_grid(torch.stack(exmp_imgs, dim=0),
-                                           nrow=4,
-                                           normalize=True,
-                                           pad_value=0.5)
-    img_grid = img_grid.permute(1, 2, 0)
+    # exmp_imgs = [train_set[i][0] for i in range(16)]
+    # # Organize the images into a grid for nicer visualization
+    # img_grid = torchvision.utils.make_grid(torch.stack(exmp_imgs, dim=0),
+    #                                        nrow=4,
+    #                                        normalize=True,
+    #                                        pad_value=0.5)
+    # img_grid = img_grid.permute(1, 2, 0)
 
-    plt.figure(figsize=(8,8))
-    plt.title("FashionMNIST examples")
-    plt.imshow(img_grid)
-    plt.axis('off')
-    plt.show()
-    plt.close()
+    # plt.figure(figsize=(8,8))
+    # plt.title("FashionMNIST examples")
+    # plt.imshow(img_grid)
+    # plt.axis('off')
+    # plt.show()
+    # plt.close()
+    
+    # plot gradient distribution
+    # for i, act_fn_name in enumerate(activation_fun_dict):
+    #     set_seed(716) # Setting the seed ensures that we have the same weight initialization for each activation function
+    #     act_fn = activation_fun_dict[act_fn_name]()
+    #     net_actfn = BaseNet(activation_fun=act_fn).to(device)
+    #     visualize_gradients(net_actfn, color=f"C{i}")
     
 # %%
