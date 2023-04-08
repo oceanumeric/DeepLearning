@@ -238,7 +238,7 @@ def train_the_model(network_model, training_dataset, val_dataset,
         
         # print out the training and validation accuracy
         print(f"### ----- Epoch {epoch+1:2d} Training accuracy: {train_acc*100.0:03.2f}")
-        print(f"                             Validation accuracy: {val_acc*100.0:03.2f}")
+        print(f"                    Validation accuracy: {val_acc*100.0:03.2f}")
         
         if val_acc > val_scores[best_val_score] or best_val_score == -1:
             best_val_score = epoch
