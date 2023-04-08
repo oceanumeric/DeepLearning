@@ -22,6 +22,7 @@ from torchvision.datasets import FashionMNIST
 
 # set up the data path
 DATA_PATH = "../data"
+SAVE_PATH = "../pretrained"
 
 # function for setting seed
 def set_seed(seed):
@@ -236,13 +237,14 @@ def train_the_model(network_model, training_dataset, val_dataset,
         val_scores.append(val_acc)
         
         # print out the training and validation accuracy
-        print(f"Epoch {epoch+1:2d} Training accuracy: {train_acc*100.0:03.2f}")
-        print(f"Validation accuracy: {val_acc*100.0:03.2f}")
+        print(f"### ----- Epoch {epoch+1:2d} Training accuracy: {train_acc*100.0:03.2f}")
+        print(f"                             Validation accuracy: {val_acc*100.0:03.2f}")
         
         if val_acc > val_scores[best_val_score] or best_val_score == -1:
             best_val_score = epoch
-            # one could save the model here
         else:
+            # one could save the model here
+            torch.save(model.state_dict(), SAVE_PATH + "/best_model.pt")
             print(f"We have not improved for {patience} epochs, stopping...")
             break 
         
@@ -254,6 +256,8 @@ def train_the_model(network_model, training_dataset, val_dataset,
     axes[1].plot([i for i in range(1, len(val_scores)+1)], val_scores)
     axes[1].set_xlabel("Epoch")
     axes[1].set_ylabel("Validation Accuracy")
+    fig.suptitle("Loss and Validation Accuracy of LeNet-5 for Fashion MNIST")
+    fig.subplots_adjust(wspace=0.45)
     fig.show()
 
 
@@ -312,6 +316,5 @@ if __name__ == "__main__":
 
     main()
 
-    
 
 # %%
