@@ -439,7 +439,7 @@ You can notice that I added a `main()` function which is slowly building up my p
 I think now you can appreciate the power of test driven development.
 For instance, in the above code, I am testing a new function called `_layer_summary()` which will print the summary of each layer in the neural network and help me to trace the dimension of the tensor.
 
-Anyone who has some experience in building a neural network will know that the dimension of the tensor is very important. How many times did you encounter 
+Anyone who has some experience in building a neural network will know that the dimension of the tensor is very important. You know what I am talking about if you have ever encountered the error message `RuntimeError: Given groups=1, weight of size [6, 1, 5, 5], expected input[64, 6, 28, 28] to have 1 channels, but got 6 channels instead`.
 
 
 
