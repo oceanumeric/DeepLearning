@@ -266,8 +266,8 @@ def _vis_grad_dist(neural_net, training_dataset, ac_fun_dict):
     """
 
     fig_rows = len(ac_fun_dict)
-    fig_cols = 5  # number of nets 
-    
+    fig_cols = 5  # number of nets
+
     # load the data from the training dataset
     train_loader = tu_data.DataLoader(training_dataset, batch_size=256, shuffle=False)
 
@@ -277,9 +277,9 @@ def _vis_grad_dist(neural_net, training_dataset, ac_fun_dict):
     imgs, labels = imgs.to(DEVICE), labels.to(DEVICE)
 
     fig, axes = plt.subplots(
-        fig_rows, fig_cols, figsize=(3.5 * fig_cols, 2.5 * fig_rows)
+        fig_rows, fig_cols, figsize=(3.7 * fig_cols, 3 * fig_rows)
     )
-    
+
     for row_idx, ac_key in enumerate(ac_fun_dict):
         set_seed(42)
         # push model to device
@@ -298,18 +298,16 @@ def _vis_grad_dist(neural_net, training_dataset, ac_fun_dict):
             if "weight" in name
         }
         ac_fun_net.zero_grad()  # set the gradient to zero
-        
+
         for col_idx, key in enumerate(gradients):
             ax = axes[row_idx, col_idx]
             sns.histplot(gradients[key], bins=30, ax=ax, kde=True, color=f"C{row_idx}")
             ax.set_title(f"{ac_key}:{key}")
-    
+
     fig.subplots_adjust(hspace=0.4, wspace=0.4)
 
 
-
 # endregion
-
 
 
 if __name__ == "__main__":
