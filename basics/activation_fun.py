@@ -19,9 +19,10 @@ from torchvision import transforms
 from torchvision.datasets import FashionMNIST
 
 
-### --------- environment setup --------- ###
+# region --------- environment setup --------- ###
 # set up the data path
 DATA_PATH = "../data"
+SAVE_PATH = "../pretrained/ac_fun"
 
 
 # function for setting seed
@@ -39,12 +40,12 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 # set up device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# endregion
 
 
-### --------- data preprocessing --------- ###
-
-
+# region --------- data prepocessing --------- ###
 def _get_data():
     """
     download the dataset from FashionMNIST and transfom it to tensor
@@ -83,7 +84,10 @@ def _visualize_data(train_dataset, test_dataset):
         plt.imshow(img.squeeze(), cmap="gray")
 
 
-## build up a class for different activation functions
+# endregion
+
+
+# region --------- activation functions --------- ###
 class AcFun(nn.Module):
     def __init__(self):
         super(AcFun, self).__init__()
@@ -162,7 +166,7 @@ def _vis_grad(ac_fun, x, ax):
     # plot the gradient
     ax.plot(x, y, "k-", label="AcFun")
     ax.plot(x, grad, "k--", label="Gradient")
-    ax.set_title(ac_fun.name)
+    ax.set_title(ac_fun.name, fontweight="bold")
     ax.legend()
     ax.set_ylim(-1.5, x.max())
 
@@ -187,20 +191,144 @@ def vis_ac_fun(ac_fun_dict):
     fig.subplots_adjust(hspace=0.3)
 
 
+# endregion
+
+
+# region --------- build up a neural network --------- ###
+class BaseNet(nn.Module):
+    """
+    A simple neural network to show the effect of activation functions
+    """
+
+    def __init__(
+        self, ac_fun, input_size=784, num_class=10, hidden_sizes=[512, 256, 256, 128]
+    ):
+        """
+        Inputs:
+            ac_fun: activation function
+            input_size: size of the input = 28*28
+            num_class: number of classes = 10
+            hidden_sizes: list of hidden layer sizes that specify the layer sizes
+        """
+        super().__init__()
+
+        # create a list of layers
+        layers = []
+        layers_sizes = [input_size] + hidden_sizes
+        for idx in range(1, len(layers_sizes)):
+            layers.append(nn.Linear(layers_sizes[idx - 1], layers_sizes[idx]))
+            layers.append(ac_fun)
+        # add the last layer
+        layers.append(nn.Linear(layers_sizes[-1], num_class))
+        # create a sequential neural network
+        self.net = nn.Sequential(*layers)  # * is used to unpack the list
+        self.num_nets = len(layers_sizes)
+
+        # set up the config dictionary
+        self.config = {
+            "ac_fun": ac_fun.config,
+            "input_size": input_size,
+            "num_class": num_class,
+            "hidden_sizes": hidden_sizes,
+            "num_of_nets": self.num_nets,
+        }
+
+    def forward(self, x):
+        x = x.view(x.shape[0], -1)  # flatten the input as 1 by 784 vector
+        return self.net(x)
+
+    def _layer_summary(self, input_size):
+        """
+        print the summary of the model
+        input_size: the size of the input tensor
+                    in the form of (batch_size, channel, height, width)
+        note: using * to unpack the tuple
+        """
+        # generate a random input tensor
+        #
+        X = torch.rand(*input_size)
+        for layer in self.net:
+            X = layer(X)
+            print(layer.__class__.__name__, "output shape:\t", X.shape)
+
+
+# endregion
+
+
+# region --------- visualize the distribution of gradient --------- ###
+def _vis_grad_dist(neural_net, training_dataset, ac_fun_dict):
+    """
+    Input:
+        nueral_net: neural network model with activation function
+                    such as foo_net = BaseNet(ReLU())
+        training_dataset: training dataset
+        ac_fun_dict: dictionary of activation functions
+    """
+
+    fig_rows = len(ac_fun_dict)
+    fig_cols = 5  # number of nets 
+    
+    # load the data from the training dataset
+    train_loader = tu_data.DataLoader(training_dataset, batch_size=256, shuffle=False)
+
+    # get the first batch of data
+    imgs, labels = next(iter(train_loader))
+    # push the data to the device
+    imgs, labels = imgs.to(DEVICE), labels.to(DEVICE)
+
+    fig, axes = plt.subplots(
+        fig_rows, fig_cols, figsize=(3.5 * fig_cols, 2.5 * fig_rows)
+    )
+    
+    for row_idx, ac_key in enumerate(ac_fun_dict):
+        set_seed(42)
+        # push model to device
+        ac_fun_net = neural_net(ac_fun_dict[ac_key]).to(DEVICE)
+        # change the model to evaluation mode
+        ac_fun_net.eval()
+        # pass the data through the network and get gradient
+        ac_fun_net.zero_grad()  # set the gradient to zero
+        preds = ac_fun_net(imgs)
+        loss = F.cross_entropy(preds, labels)
+        loss.backward()
+        # extract the gradient of the first layer
+        gradients = {
+            name: param.grad.view(-1).cpu().detach().numpy()
+            for name, param in ac_fun_net.named_parameters()
+            if "weight" in name
+        }
+        ac_fun_net.zero_grad()  # set the gradient to zero
+        
+        for col_idx, key in enumerate(gradients):
+            ax = axes[row_idx, col_idx]
+            sns.histplot(gradients[key], bins=30, ax=ax, kde=True, color=f"C{row_idx}")
+            ax.set_title(f"{ac_key}:{key}")
+    
+    fig.subplots_adjust(hspace=0.4, wspace=0.4)
+
+
+
+# endregion
+
+
+
 if __name__ == "__main__":
     print(os.getcwd())
     print("Using torch", torch.__version__)
-    print("Using device", device)
+    print("Using device", DEVICE)
     # set up finger config
     # it is only used for interactive mode
-    %config InlineBackend.figure_format = 'retina'
+    # %config InlineBackend.figure_format = "retina"
 
     # download the dataset
-    # train_set, test_set = _get_data()
+    train_set, test_set = _get_data()
+    print("Train set size:", len(train_set))
+    print("Test set size:", len(test_set))
+    print("The shape of the image:", train_set[0][0].shape)
+    print("The size of vectorized image:", train_set[0][0].view(-1).shape)
     # _visualize_data(train_set, test_set)
 
-    # create a dictionary of activation functions
-    # 6 activation functions
+    # create a dictionary of activation functions 6 activation functions
     ac_fun_dict = {
         "Sigmoid": Sigmoid(),
         "Tanh": Tanh(),
@@ -210,8 +338,24 @@ if __name__ == "__main__":
         "Swish": Swish(),
     }
     # set seaborn style
-    sns.set_style("ticks")
-    vis_ac_fun(ac_fun_dict)
+    # sns.set_style("ticks")
+    # vis_ac_fun(ac_fun_dict)
+
+    # check layer summary
+    foo = BaseNet(ac_fun_dict["Sigmoid"])
+    print(foo.config)
+    # good habit to check the dimension dynamically in the network
+    foo._layer_summary((1, 28 * 28))
+    # foo._layer_summary((28*28, 1)) will raise an error
+    # for param_name, param_val in foo.named_parameters():
+    #     print(param_name, param_val.shape, param_val.grad)
+
+    # split the dataset into train and validation
+    train_size = int(0.8 * len(train_set))
+    val_size = len(train_set) - train_size
+    train_dataset, val_dataset = tu_data.random_split(train_set, [train_size, val_size])
+    # train_the_model(foo, train_dataset, val_dataset)
+    _vis_grad_dist(BaseNet, train_dataset, ac_fun_dict)
 
 
 # %%

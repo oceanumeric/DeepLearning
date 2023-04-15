@@ -135,3 +135,5 @@ checkpoints/
 data/
 
 images/
+
+pretrained/ac_fun
