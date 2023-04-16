@@ -528,7 +528,7 @@ def _visualize_output(train_set, ac_fun_dict):
         )
         ax.set_title(f"{ac_fun_name} - Layer {layer_idx}: {layer_name}")
 
-    fig.subplots_adjust(wspace=0.4, hspace=0.4)
+    fig.subplots_adjust(wspace=0.35, hspace=0.4)
 
 
 # endregion
@@ -583,4 +583,5 @@ if __name__ == "__main__":
     _visualize_output(train_set, ac_fun_dict)
 
 
-# %%
+
+
