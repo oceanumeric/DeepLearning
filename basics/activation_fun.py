@@ -276,9 +276,7 @@ def _vis_grad_dist(neural_net, training_dataset, ac_fun_dict):
     # push the data to the device
     imgs, labels = imgs.to(DEVICE), labels.to(DEVICE)
 
-    fig, axes = plt.subplots(
-        fig_rows, fig_cols, figsize=(3.7 * fig_cols, 3 * fig_rows)
-    )
+    fig, axes = plt.subplots(fig_rows, fig_cols, figsize=(3.7 * fig_cols, 3 * fig_rows))
 
     for row_idx, ac_key in enumerate(ac_fun_dict):
         set_seed(42)
@@ -310,11 +308,10 @@ def _vis_grad_dist(neural_net, training_dataset, ac_fun_dict):
 # endregion
 
 
-
-#region ######  -------- function to train the model  -------- #######
-def train_the_model(network_model, training_dataset, val_dataset,
-                                    num_epochs=13,
-                                    patience=7):
+# region ######  -------- function to train the model  -------- #######
+def train_the_model(
+    network_model, training_dataset, val_dataset, num_epochs=13, patience=7
+):
     """
     Train the neural network model, we stop if the validation loss
     does not improve for a certain number of epochs (patience=7)
@@ -327,47 +324,45 @@ def train_the_model(network_model, training_dataset, val_dataset,
     Output:
         the trained model
     """
-    
+
     # initialize the model
     model = network_model
-    
+
     ac_fun_name = model.config["ac_fun"]["name"]
     # push the model to the device
     model.to(DEVICE)
-    
+
     # hyperparameters setting
     learning_rate = 0.001
     batch_size = 64
-    
+
     # create the loader
-    training_loader = tu_data.DataLoader(training_dataset,
-                                            batch_size=batch_size,
-                                            shuffle=True)
-    validation_loader = tu_data.DataLoader(val_dataset,
-                                            batch_size=batch_size,
-                                            shuffle=True)
-    
+    training_loader = tu_data.DataLoader(
+        training_dataset, batch_size=batch_size, shuffle=True
+    )
+    validation_loader = tu_data.DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=True
+    )
+
     # define the loss function
     loss_fn = nn.CrossEntropyLoss()
-    
+
     # define the optimizer
     # we are using stochastic gradient descent
-    optimizer = torch.optim.SGD(model.parameters(),
-                                lr=learning_rate,
-                                momentum=0.9)
-    
+    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
+
     # print out the model summary
     print(model)
-    
+
     # loss tracker
     loss_scores = []
-    
+
     # validation score tracker
     val_scores = []
     best_val_score = -1
-    epoch_count = 0 # count the number of epochs
+    epoch_count = 0  # count the number of epochs
     time_start = time.time()
-    
+
     # begin training
     for epoch in tqdm(range(num_epochs)):
         # set the model to training mode
@@ -377,11 +372,11 @@ def train_the_model(network_model, training_dataset, val_dataset,
             # push the data to the device
             imgs = imgs.to(DEVICE)
             labels = labels.to(DEVICE)
-            
+
             # forward pass
             preds = model(imgs)
             loss = loss_fn(preds, labels)
-            
+
             # backward pass
             # zero the gradient
             optimizer.zero_grad()
@@ -389,26 +384,28 @@ def train_the_model(network_model, training_dataset, val_dataset,
             loss.backward()
             # update the weights
             optimizer.step()
-            
+
             # calculate the accuracy
             correct_preds += preds.argmax(dim=1).eq(labels).sum().item()
             total_preds += len(labels)
-            
+
         epoch_count += 1
-        
+
         # append the loss score
         loss_scores.append(loss.item())
-        
+
         # calculate the training accuracy
         train_acc = correct_preds / total_preds
         # calculate the validation accuracy
         val_acc = test_the_model(model, validation_loader)
         val_scores.append(val_acc)
-        
+
         # print out the training and validation accuracy
-        print(f"### ----- Epoch {epoch+1:2d} Training accuracy: {train_acc*100.0:03.2f}")
+        print(
+            f"### ----- Epoch {epoch+1:2d} Training accuracy: {train_acc*100.0:03.2f}"
+        )
         print(f"                    Validation accuracy: {val_acc*100.0:03.2f}")
-        
+
         if val_acc > val_scores[best_val_score] or best_val_score == -1:
             best_val_score = epoch
         else:
@@ -422,15 +419,13 @@ def train_the_model(network_model, training_dataset, val_dataset,
     torch.save(model.state_dict(), SAVE_PATH + f"/{ac_fun_name}.pt")
     time_end = time.time()
     print(f"Took {time_end - time_start:.2f} seconds to train the model")
-    
-    
-        
+
     # plot the loss scores and validation scores
     fig, axes = plt.subplots(1, 2, figsize=(7, 3.5))
-    axes[0].plot([i for i in range(1, len(loss_scores)+1)], loss_scores)
+    axes[0].plot([i for i in range(1, len(loss_scores) + 1)], loss_scores)
     axes[0].set_xlabel("Epoch")
     axes[0].set_ylabel("Loss")
-    axes[1].plot([i for i in range(1, len(val_scores)+1)], val_scores)
+    axes[1].plot([i for i in range(1, len(val_scores) + 1)], val_scores)
     axes[1].set_xlabel("Epoch")
     axes[1].set_ylabel("Validation Accuracy")
     fig.suptitle("Loss and Validation Accuracy of LeNet-5 for Fashion MNIST")
@@ -447,13 +442,13 @@ def test_the_model(model, val_data_loader):
     """
     # set the model to evaluation mode
     model.eval()
-    
+
     correct_preds, total_preds = 0, 0
     for imgs, labels in val_data_loader:
         # push the data to the device
         imgs = imgs.to(DEVICE)
         labels = labels.to(DEVICE)
-        
+
         # no need to calculate the gradient
         with torch.no_grad():
             preds = model(imgs)
@@ -464,27 +459,27 @@ def test_the_model(model, val_data_loader):
             # move the tensor to the cpu
             correct_preds += preds.eq(labels.view_as(preds)).sum().item()
             total_preds += len(imgs)
-    
+
     test_acc = correct_preds / total_preds
-    
+
     return test_acc
-    
- #endregion
 
 
+# endregion
 
-#region --- visualize the output for each layer --------- #####
+
+# region --- visualize the output for each layer --------- #####
 def _visualize_output(train_set, ac_fun_dict):
     """
     visualize the output for each layer based on pretrained model
     """
-    
+
     # will only do this for three activation functions
     models_list = ["Sigmoid", "Tanh", "ReLU"]
 
     # initialize a dictionary to store the output of each layer
-    output_dict = {} 
-        
+    output_dict = {}
+
     for ac_fun_name in models_list:
         # load the data
         data_loader = tu_data.DataLoader(train_set, batch_size=1024)
@@ -494,7 +489,7 @@ def _visualize_output(train_set, ac_fun_dict):
         nn_model = BaseNet(ac_fun).to(DEVICE)
         saved_model = torch.load(SAVE_PATH + f"/{ac_fun_name}.pt", map_location=DEVICE)
         nn_model.load_state_dict(saved_model)
-        
+
         # evaluate the model
         nn_model.eval()
         with torch.no_grad():
@@ -505,19 +500,14 @@ def _visualize_output(train_set, ac_fun_dict):
                 layer_name = layer.__class__.__name__
                 output_dict_key = ac_fun_name + "_" + str(layer_idx) + "_" + layer_name
                 output_dict[output_dict_key] = imgs.view(-1).cpu().numpy()
-    
 
     fig_rows = 2 * len(models_list)
     fig_cols = 4
-    fig, axes = plt.subplots(fig_rows, fig_cols, figsize=(fig_cols*3.7, fig_rows*3))
+    fig, axes = plt.subplots(fig_rows, fig_cols, figsize=(fig_cols * 3.7, fig_rows * 3))
     axes = axes.flatten()
-    
-    color_map = {
-        "Sigmoid": "C0",
-        "Tanh": "C1",
-        "ReLU": "C2"
-    }
-    
+
+    color_map = {"Sigmoid": "C0", "Tanh": "C1", "ReLU": "C2"}
+
     for idx, output_key in enumerate(output_dict):
         # get the output
         output = output_dict[output_key]
@@ -528,16 +518,20 @@ def _visualize_output(train_set, ac_fun_dict):
         layer_name = output_key.split("_")[2]
         # get the axis
         ax = axes[idx]
-        sns.histplot(output, ax=ax, kde=True, bins=50, color=color_map[ac_fun_name])
+        sns.histplot(
+            output,
+            ax=ax,
+            bins=50,
+            kde=True,
+            stat="density",
+            color=color_map[ac_fun_name],
+        )
         ax.set_title(f"{ac_fun_name} - Layer {layer_idx}: {layer_name}")
-    
+
     fig.subplots_adjust(wspace=0.4, hspace=0.4)
-    
-        
-        
 
-#endregion
 
+# endregion
 
 
 if __name__ == "__main__":
@@ -568,7 +562,7 @@ if __name__ == "__main__":
     # set seaborn style
     # sns.set_style("ticks")
     # vis_ac_fun(ac_fun_dict)
-    
+
     # set seed
     set_seed(42)
     # check layer summary
@@ -587,8 +581,6 @@ if __name__ == "__main__":
     # train_the_model(foo, train_dataset, val_dataset)
     # _vis_grad_dist(BaseNet, train_dataset, ac_fun_dict)
     _visualize_output(train_set, ac_fun_dict)
-
-
 
 
 # %%
