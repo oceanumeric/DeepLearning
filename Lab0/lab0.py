@@ -1,4 +1,8 @@
-# %%
+"""
+Lab0: Introduction to PyTorch and Training a Simple Network
+author: oceanumeric
+date: 2024-02-25
+"""
 # import packages that are not related to torch
 import os
 import math
@@ -318,6 +322,3 @@ def main():
 if __name__ == "__main__":
     print("Running lab0.py...")
     main()
-
-
-# %%
