@@ -204,6 +204,9 @@ def _profile_model(model: nn.Module, input_size) -> None:
 def _schedule_training(
     dataloader: DataLoader, num_epochs: int = 20, optimizer: Optimizer = None
 ):
+    """
+    # based on  this https://myrtle.ai/learn/how-to-train-your-resnet/
+    """
     steps_per_epoch = len(dataloader["train"])
 
     # Define the piecewise linear scheduler
@@ -225,12 +228,13 @@ def _schedule_training(
 
 
 def train_the_model(
-    model: nn.Module,
-    dataloader: DataLoader,
-    criterion: nn.Module,
-    optimizer: Optimizer,
-    scheduler: _schedule_training,
+        model: nn.Module,
+        dataloader: DataLoader,
+        criterion: nn.Module,
+        optimizer: Optimizer,
+        scheduler: _schedule_training,
 ) -> None:
+    
     model.train()
 
     for inputs, targets in tqdm(dataloader["train"], desc="Training", leave=False):
@@ -247,8 +251,11 @@ def train_the_model(
         scheduler.step()
 
 
+
 @torch.inference_mode()
-def model_evaluation(model: nn.Module, dataloader: DataLoader) -> float:
+def model_evaluation(
+    model: nn.Module, dataloader: DataLoader) -> float:
+
     model.eval()
 
     num_samples = 0
@@ -277,12 +284,14 @@ def main():
 
     # initialize the network
     model = VGG().to(device)
-
+    
     # print(model.network)
     # print(model.classifier)
+
     # check the layer summary with a random input
     # random_input = (1, 3, 32, 32) # batch size is 1
     # model._layer_summary((1, 3, 32, 32))
+
     # profile the model
     # _profile_model(model, (1, 3, 32, 32))
 
