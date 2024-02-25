@@ -1,4 +1,6 @@
-# DeepLearning
+# TinyML and Efficient Deep Learning Computing
+
+This repository is a collection of resources and labs for the course "TinyML and Efficient Deep Learning Computing" from [MIT HAN LAB](https://hanlab.mit.edu/courses/2023-fall-65940).
 
 
 ## Setting up the environment
