@@ -343,14 +343,12 @@ def fine_grained_prune(tensor: torch.Tensor, sparsity : float) -> torch.Tensor:
     ##################### YOUR CODE STARTS HERE #####################
     # Step 1: calculate the #zeros (please use round())
     # tensor.numel() returns the number of elements in the tensor
-    num_zeros = torch.round(num_elements - tensor.count_nonzero())
+    num_zeros = round(num_elements * sparsity)
     # Step 2: calculate the importance of weight with absolute value
     importance = tensor.abs()
     # Step 3: calculate the pruning threshold based on sparsity
     # 3.1 we need to calculate the k-th (smallest) value in the tensor
-    k = num_elements * sparsity + 1
-    k = int(k)
-    threshold = torch.kthvalue(importance.view(-1), k).values
+    threshold = torch.kthvalue(importance.view(-1), num_zeros).values
     print(f"threshold: {threshold}")
     # Step 4: get binary mask (1 for nonzeros, 0 for zeros)
     mask = importance > threshold
@@ -440,6 +438,6 @@ if __name__ == "__main__":
 
     # test fine_grained_prune
     test_fine_grained_prune()
-    target_sparsity = 0.57
+    target_sparsity = 0.60
     test_fine_grained_prune(target_sparsity=target_sparsity, target_nonzeros=10)
 # %%
