@@ -1,4 +1,4 @@
-#%%
+# %%
 import copy
 import math
 import random
@@ -149,7 +149,6 @@ def train_the_model(
                 callback.on_batch_end(loss.item())
 
 
-
 @torch.inference_mode()
 def evaluate_the_model(
     network_model: nn.Module, dataloader: DataLoader, verbose: bool = True
@@ -158,7 +157,9 @@ def evaluate_the_model(
     correct = 0
     total = 0
     with torch.no_grad():
-        for inputs, target in tqdm(dataloader, desc="Evaluating", leave=False, disable=not verbose):
+        for inputs, target in tqdm(
+            dataloader, desc="Evaluating", leave=False, disable=not verbose
+        ):
             inputs, target = inputs.to(device), target.to(device)
             outputs = network_model(inputs)
             predicted = outputs.argmax(dim=1)
@@ -196,6 +197,7 @@ def get_model_sparsity(model: nn.Module) -> float:
         num_nonzeros += param.count_nonzero()
         num_elements += param.numel()
     return 1 - float(num_nonzeros) / num_elements
+
 
 def get_num_parameters(model: nn.Module, count_nonzero_only=False) -> int:
     """
@@ -283,11 +285,10 @@ def _split_data(dataset):
     return data_loader
 
 
-
 def plot_weight_distribution(model, bins=256, count_nonzero_only=False):
     # we have 8 layers in the model and one final layer for classification
     # we will plot the histogram of the weights for each layer
-    fig, axes = plt.subplots(3,3, figsize=(10, 6))
+    fig, axes = plt.subplots(3, 3, figsize=(10, 6))
     axes = axes.ravel()
     plot_index = 0
     for name, param in model.named_parameters():
@@ -299,19 +300,22 @@ def plot_weight_distribution(model, bins=256, count_nonzero_only=False):
             if count_nonzero_only:
                 param_cpu = param.detach().view(-1).cpu()
                 param_cpu = param_cpu[param_cpu != 0].view(-1)
-                ax.hist(param_cpu, bins=bins, density=True,
-                        color = 'blue', alpha = 0.5)
+                ax.hist(param_cpu, bins=bins, density=True, color="blue", alpha=0.5)
             else:
-                ax.hist(param.detach().view(-1).cpu(), bins=bins, density=True,
-                        color = 'blue', alpha = 0.5)
+                ax.hist(
+                    param.detach().view(-1).cpu(),
+                    bins=bins,
+                    density=True,
+                    color="blue",
+                    alpha=0.5,
+                )
             ax.set_xlabel(name)
-            ax.set_ylabel('density')
+            ax.set_ylabel("density")
             plot_index += 1
-    fig.suptitle('Histogram of Weights')
+    fig.suptitle("Histogram of Weights")
     fig.tight_layout()
     fig.subplots_adjust(top=0.925)
     plt.show()
-
 
 
 # constants for calculating the model size
@@ -321,8 +325,7 @@ MiB = 1024 * KiB
 GiB = 1024 * MiB
 
 
-
-def fine_grained_prune(tensor: torch.Tensor, sparsity : float) -> torch.Tensor:
+def fine_grained_prune(tensor: torch.Tensor, sparsity: float) -> torch.Tensor:
     """
     magnitude-based pruning for single tensor
     :param tensor: torch.(cuda.)Tensor, weight of conv/fc layer
@@ -361,83 +364,191 @@ def fine_grained_prune(tensor: torch.Tensor, sparsity : float) -> torch.Tensor:
 
 
 def test_fine_grained_prune(
-    test_tensor=torch.tensor([[-0.46, -0.40, 0.39, 0.19, 0.37],
-                              [0.00, 0.40, 0.17, -0.15, 0.16],
-                              [-0.20, -0.23, 0.36, 0.25, 0.03],
-                              [0.24, 0.41, 0.07, 0.13, -0.15],
-                              [0.48, -0.09, -0.36, 0.12, 0.45]]),
-    test_mask=torch.tensor([[True, True, False, False, False],
-                            [False, True, False, False, False],
-                            [False, False, False, False, False],
-                            [False, True, False, False, False],
-                            [True, False, False, False, True]]),
-    target_sparsity=0.75, target_nonzeros=None):
+    test_tensor=torch.tensor(
+        [
+            [-0.46, -0.40, 0.39, 0.19, 0.37],
+            [0.00, 0.40, 0.17, -0.15, 0.16],
+            [-0.20, -0.23, 0.36, 0.25, 0.03],
+            [0.24, 0.41, 0.07, 0.13, -0.15],
+            [0.48, -0.09, -0.36, 0.12, 0.45],
+        ]
+    ),
+    test_mask=torch.tensor(
+        [
+            [True, True, False, False, False],
+            [False, True, False, False, False],
+            [False, False, False, False, False],
+            [False, True, False, False, False],
+            [True, False, False, False, True],
+        ]
+    ),
+    target_sparsity=0.75,
+    target_nonzeros=None,
+):
     def plot_matrix(tensor, ax, title):
-        ax.imshow(tensor.cpu().numpy() == 0, vmin=0, vmax=1, cmap='tab20c')
+        ax.imshow(tensor.cpu().numpy() == 0, vmin=0, vmax=1, cmap="tab20c")
         ax.set_title(title)
         ax.set_yticklabels([])
         ax.set_xticklabels([])
         for i in range(tensor.shape[1]):
             for j in range(tensor.shape[0]):
-                text = ax.text(j, i, f'{tensor[i, j].item():.2f}',
-                                ha="center", va="center", color="k")
+                text = ax.text(
+                    j,
+                    i,
+                    f"{tensor[i, j].item():.2f}",
+                    ha="center",
+                    va="center",
+                    color="k",
+                )
 
     test_tensor = test_tensor.clone()
-    fig, axes = plt.subplots(1,2, figsize=(6, 10))
+    fig, axes = plt.subplots(1, 2, figsize=(6, 10))
     ax_left, ax_right = axes.ravel()
-    plot_matrix(test_tensor, ax_left, 'dense tensor')
+    plot_matrix(test_tensor, ax_left, "dense tensor")
 
     sparsity_before_pruning = get_sparsity(test_tensor)
     mask = fine_grained_prune(test_tensor, target_sparsity)
     sparsity_after_pruning = get_sparsity(test_tensor)
     sparsity_of_mask = get_sparsity(mask)
 
-    plot_matrix(test_tensor, ax_right, 'sparse tensor')
+    plot_matrix(test_tensor, ax_right, "sparse tensor")
     fig.tight_layout()
     plt.show()
 
-    print('* Test fine_grained_prune()')
-    print(f'    target sparsity: {target_sparsity:.2f}')
-    print(f'        sparsity before pruning: {sparsity_before_pruning:.2f}')
-    print(f'        sparsity after pruning: {sparsity_after_pruning:.2f}')
-    print(f'        sparsity of pruning mask: {sparsity_of_mask:.2f}')
+    print("* Test fine_grained_prune()")
+    print(f"    target sparsity: {target_sparsity:.2f}")
+    print(f"        sparsity before pruning: {sparsity_before_pruning:.2f}")
+    print(f"        sparsity after pruning: {sparsity_after_pruning:.2f}")
+    print(f"        sparsity of pruning mask: {sparsity_of_mask:.2f}")
 
     if target_nonzeros is None:
         if test_mask.equal(mask):
-            print('* Test passed.')
+            print("* Test passed.")
         else:
-            print('* Test failed.')
+            print("* Test failed.")
     else:
         if mask.count_nonzero() == target_nonzeros:
-            print('* Test passed.')
+            print("* Test passed.")
         else:
-            print('* Test failed.')
+            print("* Test failed.")
+
+
+class FineGrainedPruner:
+    def __init__(self, model: nn.Module, sparcity_dict: dict) -> None:
+        self.masks = FineGrainedPruner.prune(model, sparcity_dict)
+
+    @torch.no_grad()
+    def apply_prune(self, model: nn.Module) -> None:
+        for name, param in model.named_parameters():
+            if name in self.masks:
+                param.mul_(self.masks[name])
+
+    @staticmethod
+    @torch.no_grad()
+    def prune(model: nn.Module, sparsity_dict: dict) -> dict:
+        masks = dict()
+        for name, param in model.named_parameters():
+            if param.dim() > 1:
+                masks[name] = fine_grained_prune(param, sparsity_dict[name])
+
+        return masks
+
+
+@torch.no_grad()
+def sensitivity_scan(
+    model, dataloader, scan_step=0.1, scan_start=0.4, scan_end=1.0, verbose=True
+):
+    sparsities = np.arange(start=scan_start, stop=scan_end, step=scan_step)
+    accuracies = []
+    named_conv_weights = [
+        (name, param) for (name, param) in model.named_parameters() if param.dim() > 1
+    ]
+    for i_layer, (name, param) in enumerate(named_conv_weights):
+        param_clone = param.detach().clone()
+        accuracy = []
+        for sparsity in tqdm(
+            sparsities,
+            desc=f"scanning {i_layer}/{len(named_conv_weights)} weight - {name}",
+        ):
+            fine_grained_prune(param.detach(), sparsity=sparsity)
+            acc = evaluate_the_model(model, dataloader, verbose=False)
+            if verbose:
+                print(f"\r    sparsity={sparsity:.2f}: accuracy={acc:.2f}%", end="")
+            # restore
+            param.copy_(param_clone)
+            accuracy.append(acc)
+        if verbose:
+            print(
+                f'\r    sparsity=[{",".join(["{:.2f}".format(x) for x in sparsities])}]: accuracy=[{", ".join(["{:.2f}%".format(x) for x in accuracy])}]',
+                end="",
+            )
+        accuracies.append(accuracy)
+    return sparsities, accuracies
+
+
+
+def plot_sensitivity_scan(sparsities, accuracies, dense_model_accuracy):
+    lower_bound_accuracy = 100 - (100 - dense_model_accuracy) * 1.5
+    fig, axes = plt.subplots(3, int(math.ceil(len(accuracies) / 3)),figsize=(15,8))
+    axes = axes.ravel()
+    plot_index = 0
+    for name, param in model.named_parameters():
+        if param.dim() > 1:
+            ax = axes[plot_index]
+            curve = ax.plot(sparsities, accuracies[plot_index])
+            line = ax.plot(sparsities, [lower_bound_accuracy] * len(sparsities))
+            ax.set_xticks(np.arange(start=0.4, stop=1.0, step=0.1))
+            ax.set_ylim(80, 95)
+            ax.set_title(name)
+            ax.set_xlabel('sparsity')
+            ax.set_ylabel('top-1 accuracy')
+            ax.legend([
+                'accuracy after pruning',
+                f'{lower_bound_accuracy / dense_model_accuracy * 100:.0f}% of dense model accuracy'
+            ])
+            ax.grid(axis='x')
+            plot_index += 1
+    fig.suptitle('Sensitivity Curves: Validation Accuracy vs. Pruning Sparsity', fontweight='bold')
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.925)
+    plt.show()
 
 
 if __name__ == "__main__":
     print("Running lab1.py as main program.")
+    # if you need to use retina display, please uncomment the following line
+    # %config InlineBackend.figure_format = 'retina'
     # download the dataset
-    # dataset = _download_data()
-    # # load the dataset
-    # dataloader = _split_data(dataset)
+    dataset = _download_data()
+    # load the dataset
+    dataloader = _split_data(dataset)
 
-    # # download the pretrained model
-    # checkpoint_url = "https://hanlab18.mit.edu/files/course/labs/vgg.cifar.pretrained.pth"
-    # checkpoint = torch.load(download_url(checkpoint_url), map_location="cpu")
-    # model = VGG().cuda()
-    # print(f"=> loading checkpoint '{checkpoint_url}'")
-    # model.load_state_dict(checkpoint['state_dict'])
-    # recover_model = lambda: model.load_state_dict(checkpoint['state_dict'])
+    # download the pretrained model
+    checkpoint_url = (
+        "https://hanlab18.mit.edu/files/course/labs/vgg.cifar.pretrained.pth"
+    )
+    checkpoint = torch.load(download_url(checkpoint_url), map_location="cpu")
+    model = VGG().cuda()
+    print(f"=> loading checkpoint '{checkpoint_url}'")
+    model.load_state_dict(checkpoint["state_dict"])
+    recover_model = lambda: model.load_state_dict(checkpoint["state_dict"])
 
-    # # evaluate the model
-    # dense_model_accuracy = evaluate_the_model(model, dataloader["test"])
-    # dense_model_size = get_model_size(model)
-    # logger.info(f"Accuracy of the dense model: {dense_model_accuracy:.2f} %")
-    # logger.info(f"Size of the dense model: {dense_model_size / MiB:.2f} MiB")
+    # evaluate the model
+    dense_model_accuracy = evaluate_the_model(model, dataloader["test"])
+    dense_model_size = get_model_size(model)
+    logger.info(f"Accuracy of the dense model: {dense_model_accuracy:.2f} %")
+    logger.info(f"Size of the dense model: {dense_model_size / MiB:.2f} MiB")
     # plot_weight_distribution(model)
 
     # test fine_grained_prune
-    test_fine_grained_prune()
-    target_sparsity = 0.60
-    test_fine_grained_prune(target_sparsity=target_sparsity, target_nonzeros=10)
+    # test_fine_grained_prune()
+    # target_sparsity = 0.60
+    # test_fine_grained_prune(target_sparsity=target_sparsity, target_nonzeros=10)
+
+    sparsities, accuracies = sensitivity_scan(
+        model, dataloader["test"], scan_step=0.1, scan_start=0.4, scan_end=1.0
+    )
+
+    # retina for matplotlib
+    plot_sensitivity_scan(sparsities, accuracies, dense_model_accuracy)
 # %%
