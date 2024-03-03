@@ -1,7 +1,9 @@
+#%%
 import copy
 import math
 import random
 import time
+from loguru import logger
 from collections import OrderedDict, defaultdict
 from typing import Union, List
 
@@ -88,7 +90,9 @@ class VGG(nn.Module):
         layer_counts = defaultdict(int)
 
         def add(name: str, layer: nn.Module) -> None:
-            layers.append((f"{name}_{layer_counts[name]}", layer))
+            # the format has to be {name}.{layer_counts[name]}
+            # as the default format in pytorch is {name}.{index}
+            layers.append((f"{name}{layer_counts[name]}", layer))
             layer_counts[name] += 1
 
         input_channels = 3  # RGB for input image
@@ -105,12 +109,15 @@ class VGG(nn.Module):
             else:
                 add("pool", nn.MaxPool2d(kernel_size=2))
 
-        self.network = nn.Sequential(OrderedDict(layers))
+        # we have to use backbone to keep the same name as the pretrained model
+        # because the pretrained model is saved with the name backbone
+        # if you use different name, you have to change the name when loading the model
+        self.backbone = nn.Sequential(OrderedDict(layers))
         self.classifier = nn.Linear(512, 10)  # last layer input is 512 and output is 10
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # input x [batch_size - N, 3, 32, 32] -> [N, 512, 2, 2]
-        x = self.network(x)
+        x = self.backbone(x)
         # do average pooling -> [N, 512]
         x = x.mean(dim=[2, 3])
         # do classification -> [N, 10]
@@ -122,7 +129,7 @@ def train_the_model(
     network_model: nn.Module,
     dataloader: DataLoader,
     criterion: nn.Module,
-    optimizer: optimizer,
+    optimizer: Optimizer,
     scheduler: LambdaLR,
     callbacks=None,
 ) -> None:
@@ -167,5 +174,195 @@ def evaluate_the_model(
     return accuracy
 
 
+def get_model_macs(model, inputs) -> int:
+    return profile_macs(model, inputs)
+
+
+def get_sparsity(tensor: torch.Tensor) -> float:
+    """
+    calculate the sparsity of the given tensor
+        sparsity = #zeros / #elements = 1 - #nonzeros / #elements
+    """
+    return 1 - float(tensor.count_nonzero()) / tensor.numel()
+
+
+def get_model_sparsity(model: nn.Module) -> float:
+    """
+    calculate the sparsity of the given model
+        sparsity = #zeros / #elements = 1 - #nonzeros / #elements
+    """
+    num_nonzeros, num_elements = 0, 0
+    for param in model.parameters():
+        num_nonzeros += param.count_nonzero()
+        num_elements += param.numel()
+    return 1 - float(num_nonzeros) / num_elements
+
+def get_num_parameters(model: nn.Module, count_nonzero_only=False) -> int:
+    """
+    calculate the total number of parameters of model
+    :param count_nonzero_only: only count nonzero weights
+    """
+    num_counted_elements = 0
+    for param in model.parameters():
+        if count_nonzero_only:
+            num_counted_elements += param.count_nonzero()
+        else:
+            num_counted_elements += param.numel()
+    return num_counted_elements
+
+
+def get_model_size(model: nn.Module, data_width=32, count_nonzero_only=False) -> int:
+    """
+    calculate the model size in bits
+    :param data_width: #bits per element
+    :param count_nonzero_only: only count nonzero weights
+    """
+    return get_num_parameters(model, count_nonzero_only) * data_width
+
+
+def test_fine_grained_prune(
+    test_tensor=torch.tensor([[-0.46, -0.40, 0.39, 0.19, 0.37],
+                              [0.00, 0.40, 0.17, -0.15, 0.16],
+                              [-0.20, -0.23, 0.36, 0.25, 0.03],
+                              [0.24, 0.41, 0.07, 0.13, -0.15],
+                              [0.48, -0.09, -0.36, 0.12, 0.45]]),
+    test_mask=torch.tensor([[True, True, False, False, False],
+                            [False, True, False, False, False],
+                            [False, False, False, False, False],
+                            [False, True, False, False, False],
+                            [True, False, False, False, True]]),
+    target_sparsity=0.75, target_nonzeros=None):
+    def plot_matrix(tensor, ax, title):
+        ax.imshow(tensor.cpu().numpy() == 0, vmin=0, vmax=1, cmap='tab20c')
+        ax.set_title(title)
+        ax.set_yticklabels([])
+        ax.set_xticklabels([])
+        for i in range(tensor.shape[1]):
+            for j in range(tensor.shape[0]):
+                text = ax.text(j, i, f'{tensor[i, j].item():.2f}',
+                                ha="center", va="center", color="k")
+
+    test_tensor = test_tensor.clone()
+    fig, axes = plt.subplots(1,2, figsize=(6, 10))
+    ax_left, ax_right = axes.ravel()
+    plot_matrix(test_tensor, ax_left, 'dense tensor')
+
+    sparsity_before_pruning = get_sparsity(test_tensor)
+    sparsity_after_pruning = get_sparsity(test_tensor)
+    sparsity_of_mask = get_sparsity(test_mask)
+
+    plot_matrix(test_tensor, ax_right, 'sparse tensor')
+    fig.tight_layout()
+    plt.show()
+
+    print('* Test fine_grained_prune()')
+    print(f'    target sparsity: {target_sparsity:.2f}')
+    print(f'        sparsity before pruning: {sparsity_before_pruning:.2f}')
+    print(f'        sparsity after pruning: {sparsity_after_pruning:.2f}')
+    print(f'        sparsity of pruning mask: {sparsity_of_mask:.2f}')
+
+    if target_nonzeros is None:
+        if test_mask.equal(test_mask):
+            print('* Test passed.')
+        else:
+            print('* Test failed.')
+    else:
+        if test_mask.count_nonzero() == target_nonzeros:
+            print('* Test passed.')
+        else:
+            print('* Test failed.')
+
+
+
+### --------- data loading --------- ###
+def _download_data():
+    # set up the data transformation
+    transform = {
+        "train": Compose(
+            [
+                RandomCrop(32, padding=4),  # random crop with padding
+                RandomHorizontalFlip(),
+                ToTensor(),
+            ]
+        ),
+        "test": ToTensor(),
+    }
+
+    dataset = {}
+    # load the CIFAR10 dataset
+    for data_group in ["train", "test"]:
+        dataset[data_group] = CIFAR10(
+            DATA_PATH,
+            train=(data_group == "train"),
+            transform=transform[data_group],
+            download=True,
+        )
+
+    # show the dataset size
+    logger.info(f"Training dataset size: {len(dataset['train'])}")
+    logger.info(f"Testing dataset size: {len(dataset['test'])}")
+    logger.info(f"The dimension of the training data: {dataset['train'].data.shape}")
+    logger.info(f"The dimension of the testing data: {dataset['test'].data.shape}")
+    logger.info(f"The number of classes (or labels): {len(dataset['train'].classes)}")
+    logger.info(f"The classes (or labels): {dataset['train'].classes}")
+    logger.info(
+        f"The classes with their corresponding index: {dataset['train'].class_to_idx}"
+    )
+    logger.info(f"The dimension of the image: {dataset['train'][0][0].shape}")
+
+    return dataset
+
+
+def _split_data(dataset):
+    # split the training dataset into batches and
+    # we set batch size to 512
+    data_loader = {}
+    for data_group in ["train", "test"]:
+        data_loader[data_group] = DataLoader(
+            dataset[data_group],
+            batch_size=512,
+            shuffle=(data_group == "train"),
+            num_workers=0,
+            pin_memory=True,
+        )
+
+    # now have a look at the first batch of the training data and its shape
+    for data_group in ["train", "test"]:
+        logger.critical(f"Data group: {data_group}")
+        for input_data, target in data_loader[data_group]:
+            logger.info(f"The shape of the input data: {input_data.shape}")
+            logger.info(f"The shape of the target: {target.shape}")
+            break
+
+    return data_loader
+
+
+
+# constants for calculating the model size
+Byte = 8
+KiB = 1024 * Byte
+MiB = 1024 * KiB
+GiB = 1024 * MiB
+
+
 if __name__ == "__main__":
     print("Running lab1.py as main program.")
+    # download the dataset
+    dataset = _download_data()
+    # load the dataset
+    dataloader = _split_data(dataset)
+
+    # download the pretrained model
+    checkpoint_url = "https://hanlab18.mit.edu/files/course/labs/vgg.cifar.pretrained.pth"
+    checkpoint = torch.load(download_url(checkpoint_url), map_location="cpu")
+    model = VGG().cuda()
+    print(f"=> loading checkpoint '{checkpoint_url}'")
+    model.load_state_dict(checkpoint['state_dict'])
+    recover_model = lambda: model.load_state_dict(checkpoint['state_dict'])
+
+    # evaluate the model
+    dense_model_accuracy = evaluate_the_model(model, dataloader["test"])
+    dense_model_size = get_model_size(model)
+    print(f"Accuracy of the dense model: {dense_model_accuracy:.2f} %")
+    print(f"Size of the dense model: {dense_model_size / MiB:.2f} MiB")
+# %%
