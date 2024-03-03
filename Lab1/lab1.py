@@ -146,7 +146,7 @@ def train_the_model(
         # callbacks is a list of objects that have on_batch_end method
         if callbacks is not None:
             for callback in callbacks:
-                callback.on_batch_end(loss.item())
+                callback()
 
 
 @torch.inference_mode()
@@ -514,6 +514,46 @@ def plot_sensitivity_scan(sparsities, accuracies, dense_model_accuracy):
     plt.show()
 
 
+def plot_num_parameters_distribution(model):
+    num_parameters = dict()
+    for name, param in model.named_parameters():
+        if param.dim() > 1:
+            num_parameters[name] = param.numel()
+    fig = plt.figure(figsize=(8, 6))
+    plt.grid(axis='y')
+    plt.bar(list(num_parameters.keys()), list(num_parameters.values()))
+    plt.title('#Parameter Distribution')
+    plt.ylabel('Number of Parameters')
+    plt.xticks(rotation=60)
+    plt.tight_layout()
+    plt.show()
+
+
+
+def finetune_pruned_model(model: nn.Module, dataloader: DataLoader, pruner: FineGrainedPruner):
+    num_finetune_epochs = 5
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, num_finetune_epochs)
+    criterion = nn.CrossEntropyLoss()
+
+    best_sparse_model_checkpoint = dict()
+    best_accuracy = 0
+    print(f'Finetuning Fine-grained Pruned Sparse Model')
+    for epoch in range(num_finetune_epochs):
+        # At the end of each train iteration, we have to apply the pruning mask
+        #    to keep the model sparse during the training
+        train_the_model(model, dataloader['train'], criterion, optimizer, scheduler,
+            callbacks=[lambda: pruner.apply_prune(model)])
+        accuracy = evaluate_the_model(model, dataloader['test'])
+        is_best = accuracy > best_accuracy
+        if is_best:
+            best_sparse_model_checkpoint['state_dict'] = copy.deepcopy(model.state_dict())
+            best_accuracy = accuracy
+        print(f'    Epoch {epoch+1} Accuracy {accuracy:.2f}% / Best Accuracy: {best_accuracy:.2f}%')
+
+    return best_sparse_model_checkpoint
+
+
 if __name__ == "__main__":
     print("Running lab1.py as main program.")
     # if you need to use retina display, please uncomment the following line
@@ -550,5 +590,47 @@ if __name__ == "__main__":
     )
 
     # retina for matplotlib
-    plot_sensitivity_scan(sparsities, accuracies, dense_model_accuracy)
+    # plot_sensitivity_scan(sparsities, accuracies, dense_model_accuracy)
+
+    recover_model()
+
+    sparsity_dict = {
+    # please modify the sparsity value of each layer
+    # please DO NOT modify the key of sparsity_dict
+    'backbone.conv0.weight': 0.5,
+    'backbone.conv1.weight': 0.8,
+    'backbone.conv2.weight': 0.7,
+    'backbone.conv3.weight': 0.7,
+    'backbone.conv4.weight': 0.6,
+    'backbone.conv5.weight': 0.7,
+    'backbone.conv6.weight': 0.8,
+    'backbone.conv7.weight': 0.9,
+    'classifier.weight': 0.9
+    }
+    
+    pruner = FineGrainedPruner(model, sparsity_dict)
+    print(f'After pruning with sparsity dictionary')
+    for name, sparsity in sparsity_dict.items():
+        print(f'  {name}: {sparsity:.2f}')
+    print(f'The sparsity of each layer becomes')
+    for name, param in model.named_parameters():
+        if name in sparsity_dict:
+            print(f'  {name}: {get_sparsity(param):.2f}')
+
+    sparse_model_size = get_model_size(model, count_nonzero_only=True)
+    print(f"Sparse model has size={sparse_model_size / MiB:.2f} MiB = {sparse_model_size / dense_model_size * 100:.2f}% of dense model size")
+    sparse_model_accuracy = evaluate_the_model(model, dataloader["test"])
+    print(f"Sparse model has accuracy={sparse_model_accuracy:.2f}% before fintuning")
+
+    plot_weight_distribution(model, count_nonzero_only=True)
+
+    # finetune the pruned model
+    best_sparse_model_checkpoint = finetune_pruned_model(model, dataloader, pruner)
+
+
+    model.load_state_dict(best_sparse_model_checkpoint['state_dict'])
+    sparse_model_size = get_model_size(model, count_nonzero_only=True)
+    print(f"Sparse model has size={sparse_model_size / MiB:.2f} MiB = {sparse_model_size / dense_model_size * 100:.2f}% of dense model size")
+    sparse_model_accuracy = evaluate_the_model(model, dataloader['test'])
+    print(f"Sparse model has accuracy={sparse_model_accuracy:.2f}% after fintuning")
 # %%
