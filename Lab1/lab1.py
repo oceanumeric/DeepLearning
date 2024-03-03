@@ -220,60 +220,6 @@ def get_model_size(model: nn.Module, data_width=32, count_nonzero_only=False) ->
     return get_num_parameters(model, count_nonzero_only) * data_width
 
 
-def test_fine_grained_prune(
-    test_tensor=torch.tensor([[-0.46, -0.40, 0.39, 0.19, 0.37],
-                              [0.00, 0.40, 0.17, -0.15, 0.16],
-                              [-0.20, -0.23, 0.36, 0.25, 0.03],
-                              [0.24, 0.41, 0.07, 0.13, -0.15],
-                              [0.48, -0.09, -0.36, 0.12, 0.45]]),
-    test_mask=torch.tensor([[True, True, False, False, False],
-                            [False, True, False, False, False],
-                            [False, False, False, False, False],
-                            [False, True, False, False, False],
-                            [True, False, False, False, True]]),
-    target_sparsity=0.75, target_nonzeros=None):
-    def plot_matrix(tensor, ax, title):
-        ax.imshow(tensor.cpu().numpy() == 0, vmin=0, vmax=1, cmap='tab20c')
-        ax.set_title(title)
-        ax.set_yticklabels([])
-        ax.set_xticklabels([])
-        for i in range(tensor.shape[1]):
-            for j in range(tensor.shape[0]):
-                text = ax.text(j, i, f'{tensor[i, j].item():.2f}',
-                                ha="center", va="center", color="k")
-
-    test_tensor = test_tensor.clone()
-    fig, axes = plt.subplots(1,2, figsize=(6, 10))
-    ax_left, ax_right = axes.ravel()
-    plot_matrix(test_tensor, ax_left, 'dense tensor')
-
-    sparsity_before_pruning = get_sparsity(test_tensor)
-    sparsity_after_pruning = get_sparsity(test_tensor)
-    sparsity_of_mask = get_sparsity(test_mask)
-
-    plot_matrix(test_tensor, ax_right, 'sparse tensor')
-    fig.tight_layout()
-    plt.show()
-
-    print('* Test fine_grained_prune()')
-    print(f'    target sparsity: {target_sparsity:.2f}')
-    print(f'        sparsity before pruning: {sparsity_before_pruning:.2f}')
-    print(f'        sparsity after pruning: {sparsity_after_pruning:.2f}')
-    print(f'        sparsity of pruning mask: {sparsity_of_mask:.2f}')
-
-    if target_nonzeros is None:
-        if test_mask.equal(test_mask):
-            print('* Test passed.')
-        else:
-            print('* Test failed.')
-    else:
-        if test_mask.count_nonzero() == target_nonzeros:
-            print('* Test passed.')
-        else:
-            print('* Test failed.')
-
-
-
 ### --------- data loading --------- ###
 def _download_data():
     # set up the data transformation
@@ -338,6 +284,36 @@ def _split_data(dataset):
 
 
 
+def plot_weight_distribution(model, bins=256, count_nonzero_only=False):
+    # we have 8 layers in the model and one final layer for classification
+    # we will plot the histogram of the weights for each layer
+    fig, axes = plt.subplots(3,3, figsize=(10, 6))
+    axes = axes.ravel()
+    plot_index = 0
+    for name, param in model.named_parameters():
+        # check if the parameter is weight
+        # the weight is the parameter that has 2 dimensions
+        # the bias is the parameter that has 1 dimension
+        if param.dim() > 1:
+            ax = axes[plot_index]
+            if count_nonzero_only:
+                param_cpu = param.detach().view(-1).cpu()
+                param_cpu = param_cpu[param_cpu != 0].view(-1)
+                ax.hist(param_cpu, bins=bins, density=True,
+                        color = 'blue', alpha = 0.5)
+            else:
+                ax.hist(param.detach().view(-1).cpu(), bins=bins, density=True,
+                        color = 'blue', alpha = 0.5)
+            ax.set_xlabel(name)
+            ax.set_ylabel('density')
+            plot_index += 1
+    fig.suptitle('Histogram of Weights')
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.925)
+    plt.show()
+
+
+
 # constants for calculating the model size
 Byte = 8
 KiB = 1024 * Byte
@@ -345,24 +321,125 @@ MiB = 1024 * KiB
 GiB = 1024 * MiB
 
 
+
+def fine_grained_prune(tensor: torch.Tensor, sparsity : float) -> torch.Tensor:
+    """
+    magnitude-based pruning for single tensor
+    :param tensor: torch.(cuda.)Tensor, weight of conv/fc layer
+    :param sparsity: float, pruning sparsity
+        sparsity = #zeros / #elements = (1 - #nonzeros) / #elements
+    :return:
+        torch.(cuda.)Tensor, mask for zeros
+    """
+    sparsity = min(max(0.0, sparsity), 1.0)
+    if sparsity == 1.0:
+        tensor.zero_()
+        return torch.zeros_like(tensor)
+    elif sparsity == 0.0:
+        return torch.ones_like(tensor)
+
+    num_elements = tensor.numel()
+
+    ##################### YOUR CODE STARTS HERE #####################
+    # Step 1: calculate the #zeros (please use round())
+    # tensor.numel() returns the number of elements in the tensor
+    num_zeros = torch.round(num_elements - tensor.count_nonzero())
+    # Step 2: calculate the importance of weight with absolute value
+    importance = tensor.abs()
+    # Step 3: calculate the pruning threshold based on sparsity
+    # 3.1 we need to calculate the k-th (smallest) value in the tensor
+    k = num_elements * sparsity + 1
+    k = int(k)
+    threshold = torch.kthvalue(importance.view(-1), k).values
+    print(f"threshold: {threshold}")
+    # Step 4: get binary mask (1 for nonzeros, 0 for zeros)
+    mask = importance > threshold
+    ##################### YOUR CODE ENDS HERE #######################
+
+    # Step 5: apply mask to prune the tensor
+    tensor.mul_(mask)
+
+    return mask
+
+
+def test_fine_grained_prune(
+    test_tensor=torch.tensor([[-0.46, -0.40, 0.39, 0.19, 0.37],
+                              [0.00, 0.40, 0.17, -0.15, 0.16],
+                              [-0.20, -0.23, 0.36, 0.25, 0.03],
+                              [0.24, 0.41, 0.07, 0.13, -0.15],
+                              [0.48, -0.09, -0.36, 0.12, 0.45]]),
+    test_mask=torch.tensor([[True, True, False, False, False],
+                            [False, True, False, False, False],
+                            [False, False, False, False, False],
+                            [False, True, False, False, False],
+                            [True, False, False, False, True]]),
+    target_sparsity=0.75, target_nonzeros=None):
+    def plot_matrix(tensor, ax, title):
+        ax.imshow(tensor.cpu().numpy() == 0, vmin=0, vmax=1, cmap='tab20c')
+        ax.set_title(title)
+        ax.set_yticklabels([])
+        ax.set_xticklabels([])
+        for i in range(tensor.shape[1]):
+            for j in range(tensor.shape[0]):
+                text = ax.text(j, i, f'{tensor[i, j].item():.2f}',
+                                ha="center", va="center", color="k")
+
+    test_tensor = test_tensor.clone()
+    fig, axes = plt.subplots(1,2, figsize=(6, 10))
+    ax_left, ax_right = axes.ravel()
+    plot_matrix(test_tensor, ax_left, 'dense tensor')
+
+    sparsity_before_pruning = get_sparsity(test_tensor)
+    mask = fine_grained_prune(test_tensor, target_sparsity)
+    sparsity_after_pruning = get_sparsity(test_tensor)
+    sparsity_of_mask = get_sparsity(mask)
+
+    plot_matrix(test_tensor, ax_right, 'sparse tensor')
+    fig.tight_layout()
+    plt.show()
+
+    print('* Test fine_grained_prune()')
+    print(f'    target sparsity: {target_sparsity:.2f}')
+    print(f'        sparsity before pruning: {sparsity_before_pruning:.2f}')
+    print(f'        sparsity after pruning: {sparsity_after_pruning:.2f}')
+    print(f'        sparsity of pruning mask: {sparsity_of_mask:.2f}')
+
+    if target_nonzeros is None:
+        if test_mask.equal(mask):
+            print('* Test passed.')
+        else:
+            print('* Test failed.')
+    else:
+        if mask.count_nonzero() == target_nonzeros:
+            print('* Test passed.')
+        else:
+            print('* Test failed.')
+
+
 if __name__ == "__main__":
     print("Running lab1.py as main program.")
     # download the dataset
-    dataset = _download_data()
-    # load the dataset
-    dataloader = _split_data(dataset)
+    # dataset = _download_data()
+    # # load the dataset
+    # dataloader = _split_data(dataset)
 
-    # download the pretrained model
-    checkpoint_url = "https://hanlab18.mit.edu/files/course/labs/vgg.cifar.pretrained.pth"
-    checkpoint = torch.load(download_url(checkpoint_url), map_location="cpu")
-    model = VGG().cuda()
-    print(f"=> loading checkpoint '{checkpoint_url}'")
-    model.load_state_dict(checkpoint['state_dict'])
-    recover_model = lambda: model.load_state_dict(checkpoint['state_dict'])
+    # # download the pretrained model
+    # checkpoint_url = "https://hanlab18.mit.edu/files/course/labs/vgg.cifar.pretrained.pth"
+    # checkpoint = torch.load(download_url(checkpoint_url), map_location="cpu")
+    # model = VGG().cuda()
+    # print(f"=> loading checkpoint '{checkpoint_url}'")
+    # model.load_state_dict(checkpoint['state_dict'])
+    # recover_model = lambda: model.load_state_dict(checkpoint['state_dict'])
 
-    # evaluate the model
-    dense_model_accuracy = evaluate_the_model(model, dataloader["test"])
-    dense_model_size = get_model_size(model)
-    print(f"Accuracy of the dense model: {dense_model_accuracy:.2f} %")
-    print(f"Size of the dense model: {dense_model_size / MiB:.2f} MiB")
+    # # evaluate the model
+    # dense_model_accuracy = evaluate_the_model(model, dataloader["test"])
+    # dense_model_size = get_model_size(model)
+    # logger.info(f"Accuracy of the dense model: {dense_model_accuracy:.2f} %")
+    # logger.info(f"Size of the dense model: {dense_model_size / MiB:.2f} MiB")
+    # plot_weight_distribution(model)
+
+    # test fine_grained_prune
+    test_fine_grained_prune()
+    target_sparsity = 0.57
+    test_fine_grained_prune(target_sparsity=target_sparsity, target_nonzeros=10)
 # %%
